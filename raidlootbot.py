@@ -10,14 +10,14 @@ import config
 
 class BidView(discord.ui.View):
     def __init__(self, timeout: int):
-        self.users: list[discord.Member] = []
+        self.users: list[str] = []
         super().__init__(timeout=timeout)
 
-    @discord.ui.button(label='Join', custom_id='bid_join')
+    @discord.ui.button(label='RAID MAIN', custom_id='raidMain_bid_join')
     async def join(self, interaction: Interaction, button: discord.ui.Button):
         """Joins the bid."""
 
-        if interaction.user in self.users:
+        if (interaction.user.display_name + " (RAID MAIN)") in self.users:
             return await interaction.response.send_message(
                 embed=discord.Embed(
                     color=discord.Color.red(),
@@ -26,8 +26,53 @@ class BidView(discord.ui.View):
                 ephemeral=True
             )
 
-        #self.users.append(interaction.user)
-        self.users.append(interaction.user + " ALT")
+        self.users.append(interaction.user.display_name + " (RAID MAIN)")
+
+        await interaction.response.send_message(
+            embed=discord.Embed(
+                color=discord.Color.green(),
+                description='Successfully joined the bid!'
+            ),
+            ephemeral=True
+        )
+
+    @discord.ui.button(label='APPROVED RAID BOX', custom_id='raidBox_bid_join')
+    async def joinBox(self, interaction: Interaction, button: discord.ui.Button):
+        """Joins the bid for an approved raid box."""
+
+        if (interaction.user.display_name + " (RAID BOX)") in self.users:
+            return await interaction.response.send_message(
+                embed=discord.Embed(
+                    color=discord.Color.red(),
+                    description='You already joined this bid!'
+                ),
+                ephemeral=True
+            )
+
+        self.users.append(interaction.user.display_name + " (RAID BOX)")
+
+        await interaction.response.send_message(
+            embed=discord.Embed(
+                color=discord.Color.green(),
+                description='Successfully joined the bid!'
+            ),
+            ephemeral=True
+        )
+    
+    @discord.ui.button(label='ALT', custom_id='alt_bid_join')
+    async def joinAlt(self, interaction: Interaction, button: discord.ui.Button):
+        """Joins the bid for an approved raid box."""
+
+        if (interaction.user.display_name + " (ALT)") in self.users:
+            return await interaction.response.send_message(
+                embed=discord.Embed(
+                    color=discord.Color.red(),
+                    description='You already joined this bid!'
+                ),
+                ephemeral=True
+            )
+
+        self.users.append(interaction.user.display_name + " (ALT)")
 
         await interaction.response.send_message(
             embed=discord.Embed(
@@ -41,7 +86,11 @@ class BidView(discord.ui.View):
     async def leave(self, interaction: Interaction, button: discord.ui.Button):
         """Leaves the bid."""
 
-        if interaction.user not in self.users:
+        if (
+            (interaction.user.display_name + " (RAID MAIN)") not in self.users
+        and (interaction.user.display_name + " (RAID BOX)") not in self.users
+        and (interaction.user.display_name + " (ALT)") not in self.users
+        ):
             return await interaction.response.send_message(
                 embed=discord.Embed(
                     color=discord.Color.red(),
@@ -50,7 +99,14 @@ class BidView(discord.ui.View):
                 ephemeral=True
             )
 
-        self.users.remove(interaction.user)
+        if (interaction.user.display_name + " (RAID MAIN)") in self.users:
+            self.users.remove(interaction.user.display_name + " (RAID MAIN)")
+
+        if (interaction.user.display_name + " (RAID BOX)") in self.users:
+            self.users.remove(interaction.user.display_name + " (RAID BOX)")
+        
+        if (interaction.user.display_name + " (ALT)") in self.users:
+            self.users.remove(interaction.user.display_name + " (ALT)")
 
         await interaction.response.send_message(
             embed=discord.Embed(
@@ -106,10 +162,12 @@ async def start_bids(interaction: Interaction, item: str, time: Range[int, 1, 10
     view.stop()
 
     random.shuffle(view.users)
-    winners_text = '\n'.join(user.mention for user in view.users)
+    winners_text = '\n'.join(user for user in view.users)
     embed.description += f'\n\n**Results**:\n{winners_text or "No users joined!"}'
 
     view.join.disabled = True
+    view.joinBox.disabled = True
+    view.joinAlt.disabled = True
     view.leave.disabled = True
 
     await interaction.edit_original_response(embed=embed, view=view)
