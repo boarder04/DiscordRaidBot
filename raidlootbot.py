@@ -13,7 +13,7 @@ class BidView(discord.ui.View):
         self.users: list[str] = []
         super().__init__(timeout=timeout)
 
-    @discord.ui.button(label='RAID MAIN', custom_id='raidMain_bid_join')
+    @discord.ui.button(label='Main', custom_id='raidMain_bid_join')
     async def join(self, interaction: Interaction, button: discord.ui.Button):
         """Joins the bid."""
 
@@ -36,7 +36,7 @@ class BidView(discord.ui.View):
             ephemeral=True
         )
 
-    @discord.ui.button(label='APPROVED RAID BOX', custom_id='raidBox_bid_join')
+    @discord.ui.button(label='Approved Box', custom_id='raidBox_bid_join')
     async def joinBox(self, interaction: Interaction, button: discord.ui.Button):
         """Joins the bid for an approved raid box."""
 
@@ -59,7 +59,7 @@ class BidView(discord.ui.View):
             ephemeral=True
         )
     
-    @discord.ui.button(label='ALT', custom_id='alt_bid_join')
+    @discord.ui.button(label='Alt', custom_id='alt_bid_join')
     async def joinAlt(self, interaction: Interaction, button: discord.ui.Button):
         """Joins the bid for an approved raid box."""
 
@@ -146,14 +146,14 @@ async def on_ready():
 @bot.tree.command(name='startbids')
 @app_commands.guild_only()
 @app_commands.default_permissions(administrator=True)
-@app_commands.describe(item='The item to start the bid for', time='The time in seconds until the end of the bid')
-async def start_bids(interaction: Interaction, item: str, time: Range[int, 1, 1000000]):
+@app_commands.describe(item='The name of the item', classes='Who can roll on the item', time='The time in seconds until the end of the bid')
+async def start_bids(interaction: Interaction, item: str, classes: str, time: Range[int, 1, 1000000]):
     """Starts a bid for an item."""
 
     view = BidView(time)
     embed = discord.Embed(
         color=discord.Color.blue(),
-        description=f'Now rolling: **{item}**!'
+        description=f'Now rolling: **{item}**!\n\nThe following may bid:\n**{classes}**'
     )
 
     await interaction.response.send_message(embed=embed, view=view)
