@@ -31,17 +31,17 @@ class RandomBidView(discord.ui.View):
                 ephemeral=True
             )
 
-    @discord.ui.button(label='Main', custom_id='raidMain_bid_join')
+    @discord.ui.button(label='Priority Roll', custom_id='raidMain_bid_join')
     async def join_main(self, interaction: Interaction, button: discord.ui.Button):
-        await self.handle_bid(interaction, "RAID MAIN")
+        await self.handle_bid(interaction, "PRIORITY")
 
-    @discord.ui.button(label='Approved Box', custom_id='raidBox_bid_join')
-    async def join_box(self, interaction: Interaction, button: discord.ui.Button):
-        await self.handle_bid(interaction, "RAID BOX")
+    # @discord.ui.button(label='Approved Box', custom_id='raidBox_bid_join')
+    # async def join_box(self, interaction: Interaction, button: discord.ui.Button):
+    #     await self.handle_bid(interaction, "RAID BOX")
 
-    @discord.ui.button(label='Alt', custom_id='alt_bid_join')
+    @discord.ui.button(label='Standard Roll', custom_id='alt_bid_join')
     async def join_alt(self, interaction: Interaction, button: discord.ui.Button):
-        await self.handle_bid(interaction, "ALT")
+        await self.handle_bid(interaction, "Standard Roll")
 
     @discord.ui.button(label='Leave', custom_id='bid_leave')
     async def leave(self, interaction: Interaction, button: discord.ui.Button):
@@ -148,10 +148,19 @@ async def start_random(interaction: Interaction, item: str, classes: str, time: 
     await asyncio.sleep(time)
     view.stop()
 
-    bid_entries = [f'{interaction.guild.get_member(user_id).display_name} ({bid_type})' for user_id, bid_type in view.user_bids.items() if interaction.guild.get_member(user_id)]
-    random.shuffle(bid_entries)
-    winners_text = '\n'.join(bid_entries)
-    embed.description += f'\n\n**Results**:\n{winners_text if winners_text else "No users joined!"}'
+    # Separate priority rolls and standard rolls
+    priority_rolls = [f'{interaction.guild.get_member(user_id).display_name} ({bid_type})' for user_id, bid_type in view.user_bids.items() if interaction.guild.get_member(user_id) and bid_type == 'Priority Roll']
+    standard_rolls = [f'{interaction.guild.get_member(user_id).display_name} ({bid_type})' for user_id, bid_type in view.user_bids.items() if interaction.guild.get_member(user_id) and bid_type == 'Standard Roll']
+
+    # Shuffle both lists independently
+    random.shuffle(priority_rolls)
+    random.shuffle(standard_rolls)
+
+    # Concatenate lists with priority rolls on top
+    sorted_bids = priority_rolls + standard_rolls
+
+    winners_text = '\n'.join(sorted_bids) if sorted_bids else "No users joined!"
+    embed.description += f'\n\n**Results**:\n{winners_text}'
 
     # Disable all buttons after the bidding period is over
     for item in view.children:
@@ -161,8 +170,8 @@ async def start_random(interaction: Interaction, item: str, classes: str, time: 
 
 @bot.tree.command(name='bid')
 @app_commands.guild_only()
-@app_commands.describe(item='The name of the item', classes='Who can bid on the item', time='The time in seconds until the end of the bid \n(There are 86400 seconds in a day)')
-async def start_bids(interaction: Interaction, item: str, classes: str, time: Range[int, 1, 600]):
+@app_commands.describe(item='The name of the item', classes='Who can bid on the item', time='The time in seconds until the end of the bid \n 30 minute or 1800s max.')
+async def start_bids(interaction: Interaction, item: str, classes: str, time: Range[int, 1, 1800]):
     view = PlatBidView(time)
     embed = discord.Embed(
         color=discord.Color.blue(),
