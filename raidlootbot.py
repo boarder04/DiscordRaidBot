@@ -6,6 +6,49 @@ from discord.app_commands import Range
 import config
 import uuid
 
+class PlatBidView(discord.ui.View):
+    def __init__(self, timeout: int):
+        super().__init__(timeout=timeout)
+        self.bids = {}
+
+    @discord.ui.button(label='Bid', style=discord.ButtonStyle.green, custom_id='bid_button')
+    async def bid_button(self, interaction: Interaction, button: discord.ui.Button):
+        modal = PlatBidModal(self.bids)
+        await interaction.response.send_modal(modal)
+
+    @discord.ui.button(label='Leave Bid', style=discord.ButtonStyle.red, custom_id='leave_bid_button')
+    async def leave_bid_button(self, interaction: Interaction, button: discord.ui.Button):
+        if interaction.user.display_name in self.bids:
+            del self.bids[interaction.user.display_name]
+            await interaction.response.send_message("You have left the bid.", ephemeral=True)
+        else:
+            await interaction.response.send_message("You did not place a bid.", ephemeral=True)
+
+    def get_sorted_bids(self):
+        return sorted(self.bids.items(), key=lambda x: x[1], reverse=True)
+
+class PlatBidModal(discord.ui.Modal):
+    def __init__(self, bids):
+        super().__init__(title=f"Place Your Bid (Minimum Bid: {CustomBot.min_bid:,})")
+        self.bids = bids
+
+    bid_amount = discord.ui.TextInput(label="Bid Amount", placeholder="Enter your bid amount here")
+
+    async def on_submit(self, interaction: Interaction):
+        bid_amount_str = self.bid_amount.value.replace(",", "")
+        try:
+            bid_amount = int(bid_amount_str)
+        except ValueError:
+            await interaction.response.send_message("Please enter a valid number for the bid amount.", ephemeral=True)
+            return
+
+        if bid_amount < CustomBot.min_bid:
+            await interaction.response.send_message(f"Your bid must be at least {CustomBot.min_bid}.", ephemeral=True)
+            return
+
+        self.bids[interaction.user.display_name] = bid_amount
+        await interaction.response.send_message(f"Your bid of {bid_amount} has been placed.", ephemeral=True)
+
 class RandomBidView(discord.ui.View):
     def __init__(self, timeout: int, initiator_id: int, auction_id: str, previous_priority_winners: set):
         self.user_bids = {}
@@ -108,36 +151,59 @@ class RandomBidSession:
         return self.results.get(auction_id)
 
     def get_summary(self):
-        summary = []
-        unique_winners = set()
-        for auction_id, results in self.results.items():
-            item_name = self.auction_ids[auction_id]
-            winners = [result[0] for result in results]
-            summary.append((item_name, winners))
-            unique_winners.update(winners)
-        total_items = len(summary)
-        total_unique_winners = len(unique_winners)
-        return summary, total_items, total_unique_winners
+        summary = {}
+        total_items = 0
+        total_unique_winners = set()
+
+        for auction_id, auction_item in self.auction_ids.items():
+            results = self.results.get(auction_id)
+            if results:
+                summary[auction_item] = [f"{winner[0]} ({winner[1]})" for winner in results]
+                total_items += 1
+                for winner in results:
+                    total_unique_winners.add(winner[0])
+
+        return summary, total_items, len(total_unique_winners)
 
 random_bid_session = None
+
+class CustomBot(discord.Client):
+    min_bid = 1
+
+    def __init__(self):
+        intents = discord.Intents.default()
+        intents.members = True
+        super().__init__(intents=intents, help_command=None)
+        self.tree = app_commands.CommandTree(self)
+
+    async def setup_hook(self):
+        self.tree.clear_commands(guild=None)
+        self.tree.add_command(start_random)
+        self.tree.add_command(start_bids)
+        self.tree.add_command(set_min_bid)
+        self.tree.add_command(get_results)
+        self.tree.add_command(start_session)
+        self.tree.add_command(end_session)
+        await self.tree.sync()
+
+    async def on_ready(self):
+        print(f'Logged in as {self.user}')
+
+bot = CustomBot()
 
 @bot.tree.command(name='random')
 @app_commands.guild_only()
 @app_commands.describe(item='The name of the item', classes='Who can roll on the item', time='The time in seconds until the end of the bid')
 async def start_random(interaction: Interaction, item: str, classes: str, time: Range[int, 1, 600]):
-    """Starts a bid for an item."""
-
     global random_bid_session
 
     if random_bid_session is None:
         await interaction.response.send_message("There is no active session. Please start a session using /start_session command.", ephemeral=True)
         return
 
-    initiator_id = interaction.user.id
     auction_id = random_bid_session.add_auction(item)
     previous_priority_winners = random_bid_session.previous_priority_winners.values()
-
-    view = RandomBidView(time, initiator_id, auction_id, previous_priority_winners)
+    view = RandomBidView(time, interaction.user.id, auction_id, previous_priority_winners)
     embed = discord.Embed(
         color=discord.Color.blue(),
         description=f'Now rolling: **{item}**!\n\nThe following may bid:\n**{classes}**'
@@ -163,7 +229,6 @@ async def on_select_menu(interaction: Interaction):
 @app_commands.guild_only()
 @app_commands.describe(item='The name of the item to get results for')
 async def get_results(interaction: Interaction, item: str):
-    """Retrieves the results of a random bid session for a specific item."""
     if random_bid_session is None:
         await interaction.response.send_message("There is no active session. Please start a session using /start_session command.", ephemeral=True)
         return
@@ -172,7 +237,7 @@ async def get_results(interaction: Interaction, item: str):
         if item.lower() == auction_item.lower():
             results = random_bid_session.get_results(auction_id)
             if results:
-                embed = discord.Embed(color=discord.Color.blue(), description='\n'.join(f'{winner} ({count})' for winner, count in results))
+                embed = discord.Embed(color=discord.Color.blue(), description='\n'.join(f'{winner[0]} ({winner[1]})' for winner in results))
                 await interaction.response.send_message(embed=embed)
                 return
 
@@ -181,7 +246,6 @@ async def get_results(interaction: Interaction, item: str):
 @bot.tree.command(name='start_session')
 @app_commands.guild_only()
 async def start_session(interaction: Interaction):
-    """Starts a new session for storing random bid results."""
     global random_bid_session
     random_bid_session = RandomBidSession()
     await interaction.response.send_message("A new session has been started.", ephemeral=True)
@@ -189,7 +253,6 @@ async def start_session(interaction: Interaction):
 @bot.tree.command(name='end_session')
 @app_commands.guild_only()
 async def end_session(interaction: Interaction):
-    """Ends the current session for storing random bid results."""
     global random_bid_session
     if random_bid_session is None:
         await interaction.response.send_message("There is no active session.", ephemeral=True)
