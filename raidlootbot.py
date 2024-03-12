@@ -3,8 +3,10 @@ import random
 import discord
 from discord import app_commands, Interaction
 from discord.app_commands import Range
+from discord.ui import Select
 import config
 import uuid
+
 
 class PlatBidView(discord.ui.View):
     def __init__(self, timeout: int):
@@ -119,10 +121,14 @@ class RandomBidView(discord.ui.View):
                 ephemeral=True
             )
 
-    async def display_winners_dropdown(self, interaction: Interaction, winners: list):
-        options = [discord.SelectOption(label=winner) for winner in winners]
-        self.winners_dropdown = discord.ui.SelectMenu(custom_id='winner_dropdown', placeholder='Select a winner', options=options)
-        await interaction.response.send_message('Bidding period is over. Select a winner:', view=self.winners_dropdown)
+    async def display_winners_dropdown(self, interaction, winners):
+        dropdown = discord.ui.Select(placeholder="Select a winner", custom_id="winner_dropdown")
+
+        for winner in winners:
+            dropdown.add_option(label=winner)
+
+        await interaction.response.edit_message(view=self.view)
+
 
 class RandomBidSession:
     def __init__(self):
