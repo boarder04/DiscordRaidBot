@@ -215,13 +215,23 @@ async def start_random(interaction: Interaction, item: str, classes: str, time: 
         description=f'Now rolling: **{item}**!\n\nThe following may bid:\n**{classes}**'
     )
 
-    await interaction.response.send_message(embed=embed, view=view)
-
-    await asyncio.sleep(time)
-    view.stop()
-
+    # Send initial message with bid information and winners dropdown
+    winners_dropdown = discord.ui.Select(placeholder="Select a winner", custom_id="winner_dropdown")
     winners = [f'{interaction.guild.get_member(user_id).display_name} ({bid_type})' for user_id, bid_type in view.user_bids.items() if interaction.guild.get_member(user_id)]
-    await view.display_winners_dropdown(interaction, winners)
+    for winner in winners:
+        winners_dropdown.add_option(label=winner)
+
+    await interaction.response.send_message(embed=embed, view=view, components=[winners_dropdown])
+
+    # Wait for user selection on dropdown
+    interaction = await bot.wait_for("select_option", check=lambda i: i.custom_id == "winner_dropdown")
+
+    # Get selected winner
+    selected_winner = interaction.values[0]
+
+    # Process selected winner and update session
+    await interaction.response.defer_update()
+    random_bid_session.add_winner(auction_id, selected_winner.split(' ')[0], selected_winner.split(' ')[1])
 
 @bot.event
 async def on_select_menu(interaction: Interaction):
