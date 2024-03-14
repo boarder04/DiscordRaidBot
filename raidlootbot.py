@@ -3,10 +3,63 @@ import random
 import discord
 from discord import app_commands, Interaction
 from discord.app_commands import Range
-from discord.ui import Select
 import config
-import uuid
 
+class RandomBidView(discord.ui.View):
+    def __init__(self, timeout: int):
+        self.user_bids = {}  # Store user bids as a dict
+        super().__init__(timeout=timeout)
+
+    async def handle_bid(self, interaction: Interaction, bid_type: str):
+        user_id = interaction.user.id  # Use user ID to uniquely identify users
+
+        if user_id in self.user_bids:
+            await interaction.response.send_message(
+                embed=discord.Embed(
+                    color=discord.Color.red(),
+                    description=f'You have already placed a bid as **{self.user_bids[user_id]}**!'
+                ),
+                ephemeral=True
+            )
+        else:
+            self.user_bids[user_id] = bid_type
+            await interaction.response.send_message(
+                embed=discord.Embed(
+                    color=discord.Color.green(),
+                    description=f'You have successfully bid as **{bid_type}**.'
+                ),
+                ephemeral=True
+            )
+
+    @discord.ui.button(label='Priority Roll', custom_id='raidMain_bid_join')
+    async def join_main(self, interaction: Interaction, button: discord.ui.Button):
+        await self.handle_bid(interaction, "Priority Roll")
+
+    @discord.ui.button(label='Standard Roll', custom_id='alt_bid_join')
+    async def join_alt(self, interaction: Interaction, button: discord.ui.Button):
+        await self.handle_bid(interaction, "Standard Roll")
+
+    @discord.ui.button(label='Leave', custom_id='bid_leave')
+    async def leave(self, interaction: Interaction, button: discord.ui.Button):
+        user_id = interaction.user.id
+
+        if user_id not in self.user_bids:
+            await interaction.response.send_message(
+                embed=discord.Embed(
+                    color=discord.Color.red(), 
+                    description='You have not joined the bid!'
+                ),
+                ephemeral=True
+            )
+        else:
+            bid_type = self.user_bids.pop(user_id)
+            await interaction.response.send_message(
+                embed=discord.Embed(
+                    color=discord.Color.green(), 
+                    description=f'You have left the bid as **{bid_type}**.'
+                ),
+                ephemeral=True
+            )
 
 class PlatBidView(discord.ui.View):
     def __init__(self, timeout: int):
@@ -51,127 +104,39 @@ class PlatBidModal(discord.ui.Modal):
         self.bids[interaction.user.display_name] = bid_amount
         await interaction.response.send_message(f"Your bid of {bid_amount} has been placed.", ephemeral=True)
 
-class RandomBidView(discord.ui.View):
-    def __init__(self, timeout: int, initiator_id: int, auction_id: str, previous_priority_winners: set):
-        self.user_bids = {}
-        self.initiator_id = initiator_id
-        self.auction_id = auction_id
-        self.previous_priority_winners = previous_priority_winners
-        self.winners_dropdown = None
-        super().__init__(timeout=timeout)
+class CustomSelect(discord.ui.Select):
+    def __init__(self, placeholder, options, message=None):
+        super().__init__(placeholder=placeholder, options=options, custom_id='custom_select_menu')
+        self.message = message
 
-    async def handle_bid(self, interaction: Interaction, bid_type: str):
-        user_id = interaction.user.id  
-
-        if user_id in self.user_bids:
-            await interaction.response.send_message(
-                embed=discord.Embed(
-                    color=discord.Color.red(),
-                    description=f'You have already placed a bid as **{self.user_bids[user_id]}**!'
-                ),
-                ephemeral=True
-            )
-        else:
-            self.user_bids[user_id] = bid_type
-            await interaction.response.send_message(
-                embed=discord.Embed(
-                    color=discord.Color.green(),
-                    description=f'You have successfully bid as **{bid_type}**.'
-                ),
-                ephemeral=True
-            )
-
-    @discord.ui.button(label='Priority Roll', custom_id='raidMain_bid_join')
-    async def join_main(self, interaction: Interaction, button: discord.ui.Button):
-        user_id = interaction.user.id
-        if user_id in self.previous_priority_winners:
-            await interaction.response.send_message(
-                embed=discord.Embed(
-                    color=discord.Color.grey(),
-                    description='You are not eligible for Priority Roll as you have won with a priority bid previously.'
-                ),
-                ephemeral=True
-            )
-        else:
-            await self.handle_bid(interaction, "PRIORITY")
-
-    @discord.ui.button(label='Standard Roll', custom_id='alt_bid_join')
-    async def join_alt(self, interaction: Interaction, button: discord.ui.Button):
-        await self.handle_bid(interaction, "Standard Roll")
-
-    @discord.ui.button(label='Leave', custom_id='bid_leave')
-    async def leave(self, interaction: Interaction, button: discord.ui.Button):
-        user_id = interaction.user.id
-
-        if user_id not in self.user_bids:
-            await interaction.response.send_message(
-                embed=discord.Embed(
-                    color=discord.Color.red(), 
-                    description='You have not joined the bid!'
-                ),
-                ephemeral=True
-            )
-        else:
-            bid_type = self.user_bids.pop(user_id)
-            await interaction.response.send_message(
-                embed=discord.Embed(
-                    color=discord.Color.green(), 
-                    description=f'You have left the bid as **{bid_type}**.'
-                ),
-                ephemeral=True
-            )
-
-    async def display_winners_dropdown(self, interaction, winners):
-        dropdown = discord.ui.Select(placeholder="Select a winner", custom_id="winner_dropdown")
-
-        for winner in winners:
-            dropdown.add_option(label=winner)
-
-        await interaction.response.edit_message(view=self.view)
+    async def callback(self, interaction: discord.Interaction):
+        try:
+            selected_option_value = self.values[0]
+            selected_option = [option for option in self.options if option.value == selected_option_value][0]
+            selected_user = selected_option.label
+            print(f"User is : {selected_user}")
+        except Exception as e:
+            print(f"An error occurred: {e}")
 
 
-class RandomBidSession:
+
+class RandomParticipantsList:
     def __init__(self):
-        self.results = {}
-        self.auction_ids = {}
-        self.previous_priority_winners = {}
+        self.participants = {}  
 
-    def add_auction(self, item_name):
-        auction_id = str(uuid.uuid4())
-        self.auction_ids[auction_id] = item_name
-        return auction_id
+    def add_participant(self, item_name: str, participant: str):
+        if item_name not in self.participants:
+            self.participants[item_name] = []  
+        self.participants[item_name].append(participant)
 
-    def add_result(self, auction_id, results):
-        self.results[auction_id] = results
+    def get_participants(self, item_name: str):
+        return self.participants.get(item_name, [])
 
-    def add_winner(self, auction_id, winner, bid_type):
-        if bid_type == 'PRIORITY':
-            self.previous_priority_winners[winner] = auction_id
-
-        if auction_id in self.results:
-            self.results[auction_id].append((winner, bid_type))
-        else:
-            self.results[auction_id] = [(winner, bid_type)]
-
-    def get_results(self, auction_id):
-        return self.results.get(auction_id)
-
-    def get_summary(self):
-        summary = {}
-        total_items = 0
-        total_unique_winners = set()
-
-        for auction_id, auction_item in self.auction_ids.items():
-            results = self.results.get(auction_id)
-            if results:
-                summary[auction_item] = [f"{winner[0]} ({winner[1]})" for winner in results]
-                total_items += 1
-                for winner in results:
-                    total_unique_winners.add(winner[0])
-
-        return summary, total_items, len(total_unique_winners)
-
-random_bid_session = None
+    def clear_participants(self, item_name: str):
+        if item_name in self.participants:
+            del self.participants[item_name]
+    async def on_ready(self):
+        print(f'Logged in as {self.user}')
 
 class CustomBot(discord.Client):
     min_bid = 1
@@ -181,19 +146,56 @@ class CustomBot(discord.Client):
         intents.members = True
         super().__init__(intents=intents, help_command=None)
         self.tree = app_commands.CommandTree(self)
+        self.random_participants_list = RandomParticipantsList()
 
     async def setup_hook(self):
         self.tree.clear_commands(guild=None)
         self.tree.add_command(start_random)
         self.tree.add_command(start_bids)
         self.tree.add_command(set_min_bid)
-        self.tree.add_command(get_results)
-        self.tree.add_command(start_session)
-        self.tree.add_command(end_session)
         await self.tree.sync()
 
     async def on_ready(self):
         print(f'Logged in as {self.user}')
+        for guild in self.guilds:
+            print(f"Bot permissions in {guild.name}: {guild.me.guild_permissions}")
+
+    async def on_interaction(self, interaction: discord.Interaction):
+        print(f"Received interaction: {interaction}")
+        print(f"Interaction type: {interaction.type}")
+        print(f"Interaction data: {interaction.data}")
+
+        # Check if the interaction is a select menu interaction
+        if interaction.type == discord.InteractionType.component:
+            print("Interaction is a component interaction.")
+            print(f"Component type: {interaction.data.get('component_type')}")
+
+            if interaction.data.get("custom_id") == "custom_select_menu":
+                # Handle select menu interaction
+                print("Handling select menu interaction...")
+                await self.handle_select_menu(interaction)
+            else:
+                # Interaction doesn't meet the criteria, skip processing
+                print("Interaction does not have the expected custom ID. Skipping...")
+        else:
+            # Interaction is not a component interaction
+            print("Interaction is not a component interaction. Skipping...")
+
+        print("Interaction processing completed.")
+
+
+        print("Interaction processing completed.")
+
+    async def handle_select_menu(self, interaction: discord.Interaction):
+        # Extract selected option from interaction
+        selected_option_value = interaction.data["values"][0]
+
+        # Process selected option
+        print(f"Selected option: {selected_option_value}")
+        await interaction.response.send_message(f"You selected option: {selected_option_value}")
+
+
+
 
 bot = CustomBot()
 
@@ -201,90 +203,48 @@ bot = CustomBot()
 @app_commands.guild_only()
 @app_commands.describe(item='The name of the item', classes='Who can roll on the item', time='The time in seconds until the end of the bid')
 async def start_random(interaction: Interaction, item: str, classes: str, time: Range[int, 1, 600]):
-    global random_bid_session
-
-    if random_bid_session is None:
-        await interaction.response.send_message("There is no active session. Please start a session using /start_session command.", ephemeral=True)
+    if interaction is None:
+        # Handle the case where interaction is None
         return
 
-    auction_id = random_bid_session.add_auction(item)
-    previous_priority_winners = random_bid_session.previous_priority_winners.values()
-    view = RandomBidView(time, interaction.user.id, auction_id, previous_priority_winners)
+    view = RandomBidView(time)
     embed = discord.Embed(
         color=discord.Color.blue(),
         description=f'Now rolling: **{item}**!\n\nThe following may bid:\n**{classes}**'
     )
 
-    # Send initial message with bid information and winners dropdown
-    winners_dropdown = discord.ui.Select(placeholder="Select a winner", custom_id="winner_dropdown")
-    winners = [f'{interaction.guild.get_member(user_id).display_name} ({bid_type})' for user_id, bid_type in view.user_bids.items() if interaction.guild.get_member(user_id)]
-    for winner in winners:
-        winners_dropdown.add_option(label=winner)
+    await interaction.response.send_message(embed=embed, view=view)
 
-    await interaction.response.send_message(embed=embed, view=view, components=[winners_dropdown])
+    await asyncio.sleep(time)
+    view.stop()
 
-    # Wait for user selection on dropdown
-    interaction = await bot.wait_for("select_option", check=lambda i: i.custom_id == "winner_dropdown")
+    priority_rolls = [f'{interaction.guild.get_member(user_id).display_name} ({bid_type})' for user_id, bid_type in view.user_bids.items() if interaction.guild.get_member(user_id) and bid_type == 'Priority Roll']
+    standard_rolls = [f'{interaction.guild.get_member(user_id).display_name} ({bid_type})' for user_id, bid_type in view.user_bids.items() if interaction.guild.get_member(user_id) and bid_type == 'Standard Roll']
 
-    # Get selected winner
-    selected_winner = interaction.values[0]
+    random.shuffle(priority_rolls)
+    random.shuffle(standard_rolls)
 
-    # Process selected winner and update session
-    await interaction.response.defer_update()
-    random_bid_session.add_winner(auction_id, selected_winner.split(' ')[0], selected_winner.split(' ')[1])
+    sorted_bids = priority_rolls + standard_rolls
 
-@bot.event
-async def on_select_menu(interaction: Interaction):
-    if interaction.data.custom_id == 'winner_dropdown':
-        auction_id = interaction.message.id
-        winner = interaction.data.values[0]
-        await interaction.response.defer_update()
-        random_bid_session.add_winner(auction_id, winner.split(' ')[0], winner.split(' ')[1])
+    participants_text = '\n'.join(sorted_bids) if sorted_bids else "No users joined!"
+    embed.description += f'\n\n**Results**:\n{participants_text}'
 
-@bot.tree.command(name='get_results')
-@app_commands.guild_only()
-@app_commands.describe(item='The name of the item to get results for')
-async def get_results(interaction: Interaction, item: str):
-    if random_bid_session is None:
-        await interaction.response.send_message("There is no active session. Please start a session using /start_session command.", ephemeral=True)
-        return
+    for button in view.children:
+        button.disabled = True
 
-    for auction_id, auction_item in random_bid_session.auction_ids.items():
-        if item.lower() == auction_item.lower():
-            results = random_bid_session.get_results(auction_id)
-            if results:
-                embed = discord.Embed(color=discord.Color.blue(), description='\n'.join(f'{winner[0]} ({winner[1]})' for winner in results))
-                await interaction.response.send_message(embed=embed)
-                return
+    await interaction.edit_original_response(embed=embed, view=view)
 
-    await interaction.response.send_message("No results found for that item.")
+    select_options = [discord.SelectOption(label=participant, value=str(i)) for i, participant in enumerate(sorted_bids)]
+    select = CustomSelect(placeholder="Select a participant", options=select_options)
+    select_view = discord.ui.View()
+    select_view.add_item(select)
 
-@bot.tree.command(name='start_session')
-@app_commands.guild_only()
-async def start_session(interaction: Interaction):
-    global random_bid_session
-    random_bid_session = RandomBidSession()
-    await interaction.response.send_message("A new session has been started.", ephemeral=True)
+    select_message = await interaction.followup.send(content=f"Participants for {item}:", view=select_view, ephemeral=True)
+    select = CustomSelect(placeholder="Select a participant", options=select_options, message=select_message)
 
-@bot.tree.command(name='end_session')
-@app_commands.guild_only()
-async def end_session(interaction: Interaction):
-    global random_bid_session
-    if random_bid_session is None:
-        await interaction.response.send_message("There is no active session.", ephemeral=True)
-        return
 
-    summary, total_items, total_unique_winners = random_bid_session.get_summary()
 
-    if total_items == 0:
-        await interaction.response.send_message("No items were auctioned in the current session.", ephemeral=True)
-        return
 
-    summary_message = "\n".join([f"**{item[0]}**: {', '.join(item[1])}" for item in summary])
-    end_session_message = f"Summary of auction results:\n\n{summary_message}\n\nTotal items auctioned: {total_items}\nTotal unique winners: {total_unique_winners}"
-    
-    random_bid_session = None
-    await interaction.response.send_message(end_session_message, ephemeral=True)
 
 @bot.tree.command(name='bid')
 @app_commands.guild_only()
@@ -308,12 +268,12 @@ async def start_bids(interaction: Interaction, item: str, classes: str, time: Ra
     elif len(sorted_bids) == 1:
         payment_amount = bot.min_bid + 1
     else:
-        payment_amount = None  
+        payment_amount = None
 
-    winners_text = '\n'.join(f'{user} ({count}) bid {amount:,}' for user, amount, count in sorted_bids)
+    participants_text = '\n'.join(f'{user} bid {amount:,}' for user, amount in sorted_bids)
     payment_text = f"Payment amount: {payment_amount:,}" if payment_amount is not None else "No bids were placed!"
 
-    embed.description += f'\n\n**Results**:\n{winners_text}\n\n{payment_text}'
+    embed.description += f'\n\n**Results**:\n{participants_text}\n\n{payment_text}'
 
     for item in view.children:
         item.disabled = True
@@ -323,6 +283,7 @@ async def start_bids(interaction: Interaction, item: str, classes: str, time: Ra
 @bot.tree.command(name='minbid')
 @app_commands.describe(min_bid='The minimum bid amount')
 async def set_min_bid(interaction: Interaction, min_bid: int):
+    """Sets the minimum bid amount."""
     CustomBot.min_bid = max(1, min_bid)
     await interaction.response.send_message(f"Minimum bid set to {CustomBot.min_bid}.", ephemeral=True)
 
